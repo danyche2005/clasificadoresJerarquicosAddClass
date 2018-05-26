@@ -40,8 +40,10 @@ entrenarLibTenicas<-function(trainData,metodo,withProbabilities=FALSE){
     
     if(withProbabilities){
       modelo <- svm(claseAPredecir~., data=trainData, probability=withProbabilities)
+   
     }else{
       modelo <- svm(claseAPredecir~., data=trainData)
+
     }
     
     
@@ -87,6 +89,8 @@ entrenarLibTenicas<-function(trainData,metodo,withProbabilities=FALSE){
     bandera<-TRUE
     
   }
+  
+
   
   if(metodo=="RPART"){
     
@@ -208,6 +212,7 @@ prediceLibTecnicas<-function(datosTest,modelo,metodo,obtenerProb=FALSE){
   }
   
   
+ 
   if(metodo=="BOOST-EX"){
     # BOOST: 
     resultadosPaq<-predict(modelo,testExamples,type="class")
@@ -265,7 +270,7 @@ prediceLibTecnicas<-function(datosTest,modelo,metodo,obtenerProb=FALSE){
   }
   
   
-  if(metodo=="J48"||metodo=="PART"||metodo=="JRip"||metodo=="fda"||metodo=="knn"||metodo=="nnet"){
+  if(metodo=="J48"||metodo=="PART"||metodo=="JRip"||metodo=="fda"||metodo=="knn"||metodo=="nnet"||metodo=="nb"){
     
     library(caret)
 

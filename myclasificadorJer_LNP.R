@@ -1,12 +1,12 @@
 ####The next function creates the classifier tree using the validation set
-funTrainingLNP <- function(graph, dataTraining, nivel="raiz"){
+funTrainingLNP <- function(arbol, dataTraining, nivel="raiz"){
 
     #library(caret)
     library(dendextend)
     library(igraph)
   
 
-    hijos<-graph$count
+    hijos<-arbol$count
     
     #Si el nodo tiene hijos creo el clasificador por ese nodo padre.
     
@@ -16,7 +16,7 @@ funTrainingLNP <- function(graph, dataTraining, nivel="raiz"){
        
         for(i in 1:hijos){
             #Valores del Hijo
-            nodoHijo<-graph$children[[i]]
+            nodoHijo<-arbol$children[[i]]
             nodosDescendientes = names(nodoHijo$Get('level'))
             hijoDataTraining<-dataTraining[dataTraining$claseAPredecir %in% nodosDescendientes,]
             
@@ -53,13 +53,13 @@ funTrainingLNP <- function(graph, dataTraining, nivel="raiz"){
         salidasPosibles<-(paste(levels(tempTraining$claseAPredecir), collapse="#"))
         
         #Tambien guardo el clasificador en el grafico
-        graph$clasificador<-clasificadorNodo
+        arbol$clasificador<-clasificadorNodo
         #Guardamos el clasificador como parte de la estructura jerarquica que modificaremos aplicando SMOTE para balancear las clases del nodo que añadamos
-        graph$clasificadorBalanced<-clasificadorNodo
-        graph$entrada<-nivel
-        graph$salidas<-salidasPosibles
+        arbol$clasificadorBalanced<-clasificadorNodo
+        arbol$entrada<-nivel
+        arbol$salidas<-salidasPosibles
         table(tempTraining$claseAPredecir) 
-        graph$cantEntrenamiento<-(paste(paste(names(table(tempTraining$claseAPredecir)),sep = " ")," :",as.character(table(tempTraining$claseAPredecir)), collapse=" | "))
+        arbol$cantEntrenamiento<-(paste(paste(names(table(tempTraining$claseAPredecir)),sep = " ")," :",as.character(table(tempTraining$claseAPredecir)), collapse=" | "))
         
     
     }
@@ -68,32 +68,32 @@ funTrainingLNP <- function(graph, dataTraining, nivel="raiz"){
 
 
 
-topDownTesting <- function(datoTest,graph,metodo){
+topDownTesting <- function(datoTest,arbol,metodo){
   
   #Recorro la estructura con la estrategia TopDown.
-  hijos<-graph$count
+  hijos<-arbol$count
   
-  #clasePredicha<-as.character(predict(graph$clasificador,newdata = datoTest,type="class"))
-  clasePredicha<-as.character(prediceLibTecnicas(modelo=graph$clasificador,datosTest=datoTest,metodo,obtenerProb=FALSE))
+  #clasePredicha<-as.character(predict(arbol$clasificador,newdata = datoTest,type="class"))
+  clasePredicha<-as.character(prediceLibTecnicas(modelo=arbol$clasificador,datosTest=datoTest,metodo,obtenerProb=FALSE))
   
   
   #Copruebo que la clase que estoy prediciendo es una Hoja.
-  nodosHoja<-paste(graph$Get('name', filterFun = isLeaf))
+  nodosHoja<-paste(arbol$Get('name', filterFun = isLeaf))
   if(clasePredicha %in% nodosHoja)
     return(clasePredicha)
   
   #Debo bajar un nivel en la jerarquia
   if(hijos>1){
     for(i in 1:hijos){
-      if(clasePredicha==graph$children[[i]]$name){
+      if(clasePredicha==arbol$children[[i]]$name){
         #Valores del Hijo
-        nodoHijo<-graph$children[[i]]
+        nodoHijo<-arbol$children[[i]]
         
         if(!is.null(nodoHijo$clasificador)){
           
           clasePredicha<-topDownTesting(datoTest,nodoHijo,metodo)
           
-          if(clasePredicha %in% paste(graph$Get('name', filterFun = isLeaf)))
+          if(clasePredicha %in% paste(arbol$Get('name', filterFun = isLeaf)))
             return(clasePredicha)  
           
         }
@@ -106,20 +106,21 @@ topDownTesting <- function(datoTest,graph,metodo){
 #Daniel
 #TopDown-BottomUp Implementation
 
-topDownBottomUpTesting <- function(datoTest,graph,metodo,probabisList=c(),resultados=c()){
+topDownBottomUpTesting <- function(datoTest,arbol,metodo,probabisList=c(),resultados=c()){
   
   if(length(probabisList)==0){
     probabisList <- data.frame(nodo1=character(), nodo2=character(), probabilidad=numeric(),stringsAsFactors=FALSE) 
     resultados<- data.frame(claseLabel=character(), probabilidad=numeric(),stringsAsFactors=FALSE)
   }
   
-  nrohijos<-graph$count
+  nrohijos<-arbol$count
   
   if(nrohijos>0){
     
     #Solamente cuando tiene hijos hago la prediccion (LNP)
     #Asumo que el clasificador siempre es un nodo padre
-    prediccionRes<-prediceLibTecnicas(datosTest = datoTest,modelo = graph$clasificador,metodo = metodo,obtenerProb=TRUE)
+    prediccionRes<-prediceLibTecnicas(datosTest = datoTest,modelo = arbol$clasificador,metodo = metodo,obtenerProb=TRUE)
+    
     
     probabisNew<-(attr(prediccionRes,"probabilities"))
     if(is.null(probabisNew)){
@@ -130,22 +131,38 @@ topDownBottomUpTesting <- function(datoTest,graph,metodo,probabisList=c(),result
     #Guardo el valor de la probabilidad en el dataframe
     for(i in 1:ncol(probabisNew)){
       fila <- nrow(probabisList) + 1
-      probabisList[fila,] <-list(as.character(graph$name),as.character(colnames(probabisNew)[i]),as.numeric(probabisNew[i]))
+      
+      probabisList[fila,] <-list(as.character(arbol$name),as.character(colnames(probabisNew)[i]),as.numeric(probabisNew[i]))
+      
+      #Reemplazo si existen equivalencias
+      if(!is.null(arbol$equivalencia)){
+        if(!(arbol$equivalencia=="")){
+          tempA<-unlist(strsplit(arbol$equivalencia, "[ ]"))
+          tempA<-unlist(strsplit(tempA, "[#]"))
+          objetivoLabel<-tempA[1]
+          reemplazarCon<-tempA[2]
+          
+          if(probabisList[fila,2]==objetivoLabel){
+            probabisList[fila,2]<-reemplazarCon
+          }
+        }
+      }
+      
     }
     
     for(i in 1:nrohijos){
       
       #Valores del Hijo
-      nodoHijo<-graph$children[[i]]
+      nodoHijo<-arbol$children[[i]]
       
       #Analizo al Hijo
-      resultados<-topDownBottomUpTesting(datoTest = datoTest,graph = nodoHijo,metodo = metodo,probabisList = probabisList,resultados = resultados)
+      resultados<-topDownBottomUpTesting(datoTest = datoTest,arbol = nodoHijo,metodo = metodo,probabisList = probabisList,resultados = resultados)
       
     }
     
   }else{
     #Es Hoja
-    labelHoja<-paste(graph$Get('name', filterFun = isLeaf))
+    labelHoja<-paste(arbol$Get('name', filterFun = isLeaf))
     probClase<-ObtenerProbClase(probabisList = probabisList,labelHoja = labelHoja)
     #print(probabisList)
     #print(probClase)
@@ -160,21 +177,116 @@ topDownBottomUpTesting <- function(datoTest,graph,metodo,probabisList=c(),result
   return(resultados)
 }
 
+topDownBottomUpTestingPoten <- function(datoTest,arbol,metodo,probabisList=c(),resultados=c()){
+  
+  if(length(probabisList)==0){
+    probabisList <- data.frame(nodo1=character(), nodo2=character(), probabilidad=numeric(),clasificadorNumero=numeric(),nroInstancias=numeric(),stringsAsFactors=FALSE) 
+    resultados<- data.frame(claseLabel=character(), probabilidad=numeric(),stringsAsFactors=FALSE)
+  }
+  
+  nrohijos<-arbol$count
+  
+  if(nrohijos>0){
+    
+    #Solamente cuando tiene hijos hago la prediccion (LNP)
+    #Asumo que el clasificador siempre es un nodo padre
+    prediccionRes<-prediceLibTecnicas(datosTest = datoTest,modelo = arbol$clasificador,metodo = metodo,obtenerProb=TRUE)
+    prediccionResAdapt<-prediceLibTecnicas(datosTest = datoTest,modelo = arbol$clasificadorAdapt,metodo = metodo,obtenerProb=TRUE)
+    
+    
+    probabisNew<-(attr(prediccionRes,"probabilities"))
+    if(is.null(probabisNew)){
+      probabisNew<-prediccionRes
+    }
+    
+    probabisNewAdapt<-(attr(prediccionResAdapt,"probabilities"))
+    if(is.null(probabisNewAdapt)){
+      probabisNewAdapt<-prediccionResAdapt
+    }
+    
+    nrInstancias<-unlist(strsplit(arbol$instancias,"[#]"))
+    names(nrInstancias)<-unlist(strsplit(arbol$salidas,"[#]"))
+    
+    #Guardo el valor de la probabilidad en el dataframe
+    for(i in 1:ncol(probabisNew)){
+      fila <- nrow(probabisList) + 1
+      labelObj<-as.character(colnames(probabisNew)[i])
+      probabisList[fila,] <-list(as.character(arbol$name),labelObj,as.numeric(probabisNew[i]),0,nrInstancias[labelObj])
+      
+      
+      
+      
+      #Reemplazo si existen equivalencias
+      #Excluyo el arbol adaptado por que este ya tiene las referencias correctas
+      if(!is.null(arbol$equivalencia)){
+        if(!(arbol$equivalencia=="")){
+          tempA<-unlist(strsplit(arbol$equivalencia, "[ ]"))
+          tempA<-unlist(strsplit(tempA, "[#]"))
+          objetivoLabel<-tempA[1]
+          reemplazarCon<-tempA[2]
+          
+          if(probabisList[fila,2]==objetivoLabel & probabisList[fila,4]!='cNew'){
+            probabisList[fila,2]<-reemplazarCon
+          }
+        }
+      }
+      
+    }
+    
+    for(i in 1:ncol(probabisNew)){
+      fila <- nrow(probabisList) + 1
+      labelObj<-as.character(colnames(probabisNew)[i])
+      probabisList[fila,] <-list(as.character(arbol$name),labelObj,as.numeric(probabisNewAdapt[i]),1,nrInstancias[labelObj])
+      
+    }
+    
+    
+    for(i in 1:nrohijos){
+      
+      #Valores del Hijo
+      nodoHijo<-arbol$children[[i]]
+      
+      #Analizo al Hijo
+      resultados<-topDownBottomUpTestingPoten(datoTest = datoTest,arbol = nodoHijo,metodo = metodo,probabisList = probabisList,resultados = resultados)
+      
+    }
+    
+  }else{
+    #Es Hoja
+    labelHoja<-paste(arbol$Get('name', filterFun = isLeaf))
+    
+    
+    #Filtro el valor final
+    
+    probClase<-ObtenerProbClasePoten(probabisList = probabisList,labelHoja = labelHoja)
+    #print(probabisList)
+    #print(probClase)
+    #print(labelHoja)  
+    
+    #Guardo la probabilidad de cada clase
+    filaRes <- nrow(resultados) + 1
+    resultados[filaRes,] <-list(labelHoja,probClase)
+    
+  }
+  
+  return(resultados)
+}
 
-topDownBottomUpTestingB <- function(datoTest,graph,metodo,probabisList=c(),resultados=c()){
+
+topDownBottomUpTestingB <- function(datoTest,arbol,metodo,probabisList=c(),resultados=c()){
   
   if(length(probabisList)==0){
     probabisList <- data.frame(nodo1=character(), nodo2=character(), probabilidad=numeric(),stringsAsFactors=FALSE) 
     resultados<- data.frame(claseLabel=character(), probabilidad=numeric(),stringsAsFactors=FALSE)
   }
   
-  nrohijos<-graph$count
+  nrohijos<-arbol$count
   
   if(nrohijos>0){
     
     #Solamente cuando tiene hijos hago la prediccion (LNP)
     #Asumo que el clasificador siempre es un nodo padre
-    prediccionRes<-prediceLibTecnicas(datosTest = datoTest,modelo = graph$clasificadorBalanced,metodo = metodo,obtenerProb=TRUE)
+    prediccionRes<-prediceLibTecnicas(datosTest = datoTest,modelo = arbol$clasificadorBalanced,metodo = metodo,obtenerProb=TRUE)
     
     probabisNew<-(attr(prediccionRes,"probabilities"))
     if(is.null(probabisNew)){
@@ -185,22 +297,23 @@ topDownBottomUpTestingB <- function(datoTest,graph,metodo,probabisList=c(),resul
     #Guardo el valor de la probabilidad en el dataframe
     for(i in 1:ncol(probabisNew)){
       fila <- nrow(probabisList) + 1
-      probabisList[fila,] <-list(as.character(graph$name),as.character(colnames(probabisNew)[i]),as.numeric(probabisNew[i]))
+      probabisList[fila,] <-list(as.character(arbol$name),as.character(colnames(probabisNew)[i]),as.numeric(probabisNew[i]))
     }
     
     for(i in 1:nrohijos){
       
       #Valores del Hijo
-      nodoHijo<-graph$children[[i]]
+      nodoHijo<-arbol$children[[i]]
       
       #Analizo al Hijo
-      resultados<-topDownBottomUpTestingB(datoTest = datoTest,graph = nodoHijo,metodo = metodo,probabisList = probabisList,resultados = resultados)
+      resultados<-topDownBottomUpTestingB(datoTest = datoTest,arbol = nodoHijo,metodo = metodo,probabisList = probabisList,resultados = resultados)
       
     }
     
   }else{
     #Es Hoja
-    labelHoja<-paste(graph$Get('name', filterFun = isLeaf))
+    labelHoja<-paste(arbol$Get('name', filterFun = isLeaf))
+    
     probClase<-ObtenerProbClase(probabisList = probabisList,labelHoja = labelHoja)
     #print(probabisList)
     #print(probClase)
@@ -238,6 +351,54 @@ ObtenerProbClase <- function(probabisList,labelHoja,probAnt=1){
   return(probabilidad)
 }
 
+ObtenerProbClasePoten <- function(probabisList,labelHoja,probAnt=1){
+  
+  #Busco la existencia clase
+  listTemp<-probabisList[probabisList$nodo2==labelHoja,]
+  
+  
+   if(nrow(listTemp)==1){
+    
+      registro <- listTemp[1,]
+      probabilidad<-probAnt*registro$probabilidad
+    
+    }
+    
+    if(nrow(listTemp)>1){
+    
+      # for(i in 1:nrow(listTemp)) {
+      registro_0 <- listTemp[1,]
+      registro_1 <- listTemp[2,]
+      
+      Prob_A<-registro_0$probabilidad*as.numeric(registro_0$nroInstancias)
+      Prob_B<-registro_1$probabilidad*as.numeric(registro_1$nroInstancias)
+      
+      if(Prob_A>Prob_B){
+        registro<-registro_0
+        probabilidad<-probAnt*registro_0$probabilidad
+      }
+      if(Prob_B>Prob_A){
+        registro<-registro_1
+        probabilidad<-probAnt*registro_1$probabilidad
+      }
+      if(Prob_A==Prob_B){
+        registro<-registro_0
+        probabilidad<-probAnt*registro_0$probabilidad
+        
+      }
+      
+    }
+    
+    if(registro$nodo1=="Root"){
+    
+    }else{
+      probabilidad<-ObtenerProbClase(probabisList = probabisList,labelHoja=registro$nodo1,probAnt = probabilidad)
+    }
+  # }
+  
+  return(probabilidad)
+}
+
 prediccionConJerarquiaProbs<-function(jerarquiaClases,testing,metodo,obtenerClases=FALSE){
   
   etiquetas<-as.character(jerarquiaClases$Get("name", filterFun = isLeaf))
@@ -250,9 +411,57 @@ prediccionConJerarquiaProbs<-function(jerarquiaClases,testing,metodo,obtenerClas
     if(i%%500==0){
       #print(i)
     }
+    
     #print(i)
     #Realizo el recorrido TopDown
-    resultadosIns<-topDownBottomUpTesting(datoTest = testing[i,],graph = jerarquiaClases,metodo = metodo)
+    resultadosIns<-topDownBottomUpTesting(datoTest = testing[i,],arbol = jerarquiaClases,metodo = metodo)
+    resultadosIns<-resultadosIns[order(resultadosIns$claseLabel),]
+    
+    #Ajusto los resultados
+    n <- resultadosIns$claseLabel
+    resultadosInsP <- as.data.frame(t(resultadosIns[-1]))
+    colnames(resultadosInsP) <- n
+    
+    
+    predicciones<-rbind(predicciones,resultadosInsP)
+    
+    
+  }
+  
+  #Obtengo las Clases Unicamente
+  if(obtenerClases){
+    listaClases<-{}
+    for(i in 1:nrow(predicciones)){
+      prediccion<-predicciones[i,]
+      numCol<-which(prediccion==max(prediccion))  
+      claseEncontrada<-names(prediccion)[numCol]
+      listaClases[i]<-claseEncontrada
+    }  
+    predicciones<-listaClases
+  }
+  
+  
+  
+  return(predicciones)
+}
+
+
+prediccionConJerarquiaProbsPoten<-function(jerarquiaClases,testing,metodo,obtenerClases=FALSE){
+  
+  etiquetas<-as.character(jerarquiaClases$Get("name", filterFun = isLeaf))
+  etiquetas<-etiquetas[order(etiquetas)]
+  predicciones <- read.table(textConnection(""), col.names = etiquetas,colClasses = "numeric")
+  
+  contador<-nrow(testing)
+  #print(paste("Son Predicciones Nro:",contador))
+  for(i in 1:nrow(testing)){
+    if(i%%500==0){
+      #print(i)
+    }
+    
+    #print(i)
+    #Realizo el recorrido TopDown
+    resultadosIns<-topDownBottomUpTestingPoten(datoTest = testing[i,],arbol = jerarquiaClases,metodo = metodo)
     resultadosIns<-resultadosIns[order(resultadosIns$claseLabel),]
     
     #Ajusto los resultados
@@ -299,7 +508,7 @@ prediccionConJerarquiaProbsB<-function(jerarquiaClases,testing,metodo,obtenerCla
     }
     #print(i)
     #Realizo el recorrido TopDown
-    resultadosIns<-topDownBottomUpTesting(datoTest = testing[i,],graph = jerarquiaClases,metodo = metodo)
+    resultadosIns<-topDownBottomUpTesting(datoTest = testing[i,],arbol = jerarquiaClases,metodo = metodo)
     resultadosIns<-resultadosIns[order(resultadosIns$claseLabel),]
     
     #Ajusto los resultados

@@ -29,7 +29,17 @@ missingClass<- function(cf){
 similarClass <- function(cf,class){
     v<-cf[,class]
     index<-which.is.max(v)
-    return(attributes(v)$names[index])#class name
+    
+    
+    if(v[index]==0){
+      #No se encuentra un similar. Se agrega este nodo a la raiz.
+      nombreSim<-"Root"
+      
+    }else{
+      nombreSim<-attributes(v)$names[index]
+    }
+    
+    return(nombreSim)#class name
 }
 
 classHierachy<- function(matrix, linkage="complete"){
@@ -133,3 +143,152 @@ unirNodos<-function(nodoPadre,nodoHijo){
   }
   return(nodoPadre)
 }
+
+
+genRandomString <- function(n = 1) {
+  a <- do.call(paste0, replicate(5, sample(LETTERS, n, TRUE), FALSE))
+  paste0(a, sprintf("%04d", sample(9999, n, TRUE)), sample(LETTERS, n, TRUE))
+}
+
+
+
+
+addClassTreeToNode <- function(padreNode,arbolClasificadores) {
+  
+  nroHijos<-length(arbolClasificadores$children)
+  
+  if(nroHijos>0){
+    for(i in 1:nroHijos){
+      
+      nodoHijo<-arbolClasificadores$children[[i]]    
+      #Creo una copia del nodo
+      #copiaHijo <- Node$new(nodoHijo$name)
+      
+      #Sin es un nodo interno se debe copiar el clasificador
+      if(!nodoHijo$isLeaf){
+        # copiaHijo$clasificador <- nodoHijo$clasificador
+        # copiaHijo$entrada <- nodoHijo$entrada
+        # copiaHijo$salidas <- nodoHijo$salidas
+        #   
+        padreNode$AddChild(nodoHijo$name, clasificador = nodoHijo$clasificador, entrada = nodoHijo$entrada, salidas=nodoHijo$salidas )
+        #padreRoot$children[nodoHijo$name]<-addClassTreeToNode(FindNode(padreNode,nodoHijo$name),nodoHijo)
+        nodoAgregado<-FindNode(padreNode,nodoHijo$name)
+        addClassTreeToNode(nodoAgregado,nodoHijo)
+        
+      }else{
+        padreNode$AddChild(nodoHijo$name)
+      }
+      
+
+    }
+  }
+
+  
+}
+
+
+#Guarda Imagenes del Plot en archivos
+
+guardarImagenJerarquia<-function(arbol,nombreArchivo,directorio){
+  #Guarda una imagen de plot
+  
+  if (Sys.info()[1] == "Windows") {
+    mypath <-
+      file.path(
+        directorio,
+        nombreArchivo
+      )
+  }else{
+    # Mac y Linux
+    mypath <-
+      file.path(
+        directorio,
+        nombreArchivo
+      )
+    
+  }
+  png(file = mypath)
+  mytitle = paste(nombreArchivo,sep = "")
+  textplot(print(arbol)[,1])
+  dev.off()
+  
+  
+}
+
+# 
+# for (i in (1:n)){
+#   file<-paste(directorio,"/Jerarquias/","ConfMat_Val_",ik,u.s[i],".png",sep="")
+#   png(file)
+#   textplot(print(allClassHierar[[i]])[,1])
+#   dev.off()
+# }
+
+
+cargarDatosScala<-function(satimage,nuevodf,valorPerdidos=NA){
+  
+  #   #Tomar un archivo en scala a un dataset simple
+  #   satimage <- read.delim("C:/Users/DanielAndres/Downloads/satimage.scale", header=FALSE, stringsAsFactors=FALSE)
+  #   
+  #   #Defino la estructura de una fila
+  #   nuevodf <- data.frame(claseAPredecir=character(),V1=numeric(),V2=numeric,V3=numeric(),V4=numeric,V5=numeric(),V6=numeric,V7=numeric(),V8=numeric,V9=numeric(),V10=numeric()
+  #                           ,V11=numeric(),V12=numeric,V13=numeric(),V14=numeric,V15=numeric(),V16=numeric,V17=numeric(),V18=numeric,V19=numeric(),V20=numeric()
+  #                           ,V21=numeric(),V22=numeric,V23=numeric(),V24=numeric,V25=numeric(),V26=numeric,V27=numeric(),V28=numeric,V29=numeric(),V30=numeric()
+  #                           ,V31=numeric(),V32=numeric,V33=numeric(),V34=numeric,V35=numeric(),V36=numeric)
+  #   
+  
+  #Recorro cada fila que se representa como un string
+  for(i in 1:nrow(satimage)){
+    #fila<-satimage[i,]
+    fila<-satimage[i,]
+    
+    datosCaracteres<-fila[,1]
+    
+    elementos<-strsplit(datosCaracteres, " ")[[1]]
+    
+    
+    #Obtengo las clase y los atributos
+    clase<-elementos[1]
+    otrosElementos<-elementos[-1]
+    
+    
+    #Guardo la Clase
+    atributo<-c()
+    atributo['claseAPredecir']<-clase
+    
+    #Guardo los atributos
+    for(i in 1:length(otrosElementos)){
+      eleTemp<-strsplit(otrosElementos[i], ":")[[1]]
+      #Cuando los nombres son Numeros: V+1
+      atributo[paste('V',eleTemp[1],sep = "")]<-as.numeric(eleTemp[2])   
+    }  
+    
+    #Pongo los valores vacios
+    for(i in 1:(ncol(nuevodf)-1)){
+      if(is.na(atributo[paste('V',i,sep = "")])){
+        atributo[paste('V',i,sep = "")]<-valorPerdidos
+      }
+    }
+    
+    A <- matrix( atributo,nrow=1,ncol=ncol(nuevodf),byrow = TRUE)
+    colnames(A) = names(atributo)
+    
+    #Guardo el registro en el dataframe
+    nuevodf<-rbind(nuevodf,data.frame(A,stringsAsFactors = FALSE,check.names = TRUE))
+    
+    if((i %% 100)==0){
+      print(i)  
+    }
+    
+    
+  }
+  
+  #Arreglo el formato de la tabla
+  for(i in 2:ncol(nuevodf)){
+    nuevodf[,i]<-as.numeric(nuevodf[,i])
+  }
+  nuevodf$claseAPredecir<-factor(nuevodf$claseAPredecir)
+  
+  return(nuevodf)
+}
+
+
